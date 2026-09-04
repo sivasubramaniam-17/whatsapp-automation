@@ -1,0 +1,33 @@
+{
+  "name": "whatsapp-automation-saas",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Multi-tenant WhatsApp automation SaaS — Next.js (backend API + web dashboard) with a Flutter mobile client (in /mobile).",
+  "scripts": {
+    "dev": "next dev -p 4000",
+    "build": "prisma generate && prisma migrate deploy && next build",
+    "postinstall": "prisma generate",
+    "start": "next start -p 4000",
+    "lint": "next lint",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:studio": "prisma studio"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.19.0",
+    "bcryptjs": "^2.4.3",
+    "jose": "^5.9.2",
+    "next": "^14.2.5",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/node": "^20.14.0",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "prisma": "^5.19.0",
+    "typescript": "^5.5.4"
+  }
+}

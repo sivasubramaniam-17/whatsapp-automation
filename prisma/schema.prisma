@@ -1,0 +1,222 @@
+// Prisma schema — Phase 0 core. Later phases add campaigns, chatbot_flows,
+// templates (see ARCHITECTURE_AND_PLAN.md §5).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// A customer company. Everything is scoped to a tenant.
+model Tenant {
+  id   String @id @default(cuid())
+  name String
+  plan String @default("starter") // starter | pro | business
+
+  // WhatsApp Cloud API connection for this tenant (from Embedded Signup).
+  wabaId        String? // WhatsApp Business Account id
+  phoneNumberId String? // the id used to send messages
+  accessToken   String? // per-tenant token (falls back to global env in dev)
+
+  users         User[]
+  contacts      Contact[]
+  conversations Conversation[]
+  messages      Message[]
+  campaigns     Campaign[]
+  chatbotFlows  ChatbotFlow[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum UserRole {
+  owner
+  admin
+  agent
+}
+
+model User {
+  id       String @id @default(cuid())
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  email        String
+  passwordHash String
+  name         String?
+  role         UserRole @default(owner)
+
+  assignedConversations Conversation[] @relation("AssignedAgent")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, email])
+  @@index([tenantId])
+}
+
+model Contact {
+  id       String @id @default(cuid())
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  waPhone String // E.164, e.g. 15551234567
+  name    String?
+  tags    String[] @default([])
+  stage   String   @default("new") // new | contacted | qualified | won | lost
+  optIn   Boolean  @default(false)
+
+  conversations      Conversation[]
+  campaignRecipients CampaignRecipient[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, waPhone])
+  @@index([tenantId])
+}
+
+enum ConversationStatus {
+  open
+  pending
+  closed
+}
+
+model Conversation {
+  id       String @id @default(cuid())
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  contactId String
+  contact   Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  assignedUserId String?
+  assignedUser   User?   @relation("AssignedAgent", fields: [assignedUserId], references: [id])
+
+  status          ConversationStatus @default(open)
+  lastMessageAt   DateTime?
+  // End of the 24h free "service window". Outside it only templates are allowed.
+  windowExpiresAt DateTime?
+
+  messages Message[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId])
+  @@index([contactId])
+}
+
+enum MessageDirection {
+  inbound
+  outbound
+}
+
+model Message {
+  id             String       @id @default(cuid())
+  tenantId       String
+  tenant         Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  direction    MessageDirection
+  type         String  @default("text") // text | template | image | document | ...
+  content      String? // text body or serialized payload
+  templateName String?
+  status       String  @default("sent") // sent | delivered | read | failed | received
+  waMessageId  String? // id returned by / received from Meta
+
+  createdAt DateTime @default(now())
+
+  @@index([tenantId])
+  @@index([conversationId])
+  @@index([waMessageId])
+}
+
+enum CampaignStatus {
+  draft
+  sending
+  completed
+  failed
+}
+
+// A broadcast: one approved template sent to a segment of contacts.
+model Campaign {
+  id       String @id @default(cuid())
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  name         String
+  templateName String
+  languageCode String @default("en_US")
+  // Optional template components (header/body params) applied to every recipient.
+  components   Json?
+
+  // Segment filter: contacts matching ANY tag AND (any listed stage, if given).
+  segmentTags   String[] @default([])
+  segmentStages String[] @default([])
+  // Only send to opted-in contacts (marketing compliance).
+  optInOnly     Boolean  @default(true)
+
+  status      CampaignStatus @default(draft)
+  total       Int            @default(0)
+  scheduledAt DateTime?
+  startedAt   DateTime?
+  finishedAt  DateTime?
+
+  recipients CampaignRecipient[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId])
+}
+
+model CampaignRecipient {
+  id         String   @id @default(cuid())
+  campaignId String
+  campaign   Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  contactId  String
+  contact    Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  waPhone     String
+  status      String  @default("pending") // pending | sent | delivered | read | failed
+  waMessageId String?
+  error       String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([campaignId])
+  @@index([waMessageId])
+}
+
+// A no-code auto-reply rule. Evaluated against each inbound customer message.
+model ChatbotFlow {
+  id       String @id @default(cuid())
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  name    String
+  active  Boolean @default(true)
+  // "welcome" fires on the first message of a new conversation;
+  // "keyword" fires when the message matches one of `keywords`;
+  // "default" is the fallback when nothing else matches.
+  trigger String @default("keyword") // welcome | keyword | default
+
+  keywords  String[] @default([])
+  matchType String   @default("contains") // contains | exact
+
+  responseText String
+  // If true, mark the conversation as needing a human (routes to inbox).
+  handoff  Boolean @default(false)
+  priority Int     @default(0) // higher wins among matching keyword flows
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId])
+}
