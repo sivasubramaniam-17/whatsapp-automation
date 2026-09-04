@@ -75,3 +75,4 @@ curl http://localhost:4000/api/auth/me -H "Authorization: Bearer <token>"
 
 CRM → broadcasts (queue) → chatbot flows → Flutter app. See the plan doc.
 # whatsapp-automation
+j
