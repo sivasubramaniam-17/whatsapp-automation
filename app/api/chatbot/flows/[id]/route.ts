@@ -14,7 +14,7 @@ async function getOwned(tenantId: string, id: string) {
 
 const updateSchema = z.object({
   name: z.string().min(1).optional(),
-  trigger: z.enum(["welcome", "keyword", "default"]).optional(),
+  trigger: z.enum(["welcome", "keyword", "default", "booking"]).optional(),
   keywords: z.array(z.string()).optional(),
   matchType: z.enum(["contains", "exact"]).optional(),
   responseText: z.string().min(1).optional(),

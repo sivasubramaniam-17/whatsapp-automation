@@ -22,17 +22,23 @@ export async function GET(req: NextRequest) {
 const schema = z
   .object({
     name: z.string().min(1),
-    trigger: z.enum(["welcome", "keyword", "default"]).default("keyword"),
+    trigger: z.enum(["welcome", "keyword", "default", "booking"]).default("keyword"),
     keywords: z.array(z.string()).optional(),
     matchType: z.enum(["contains", "exact"]).optional(),
-    responseText: z.string().min(1),
+    // Booking flows reply with slot options instead of responseText, so the
+    // text is optional for them.
+    responseText: z.string().min(1).optional(),
     handoff: z.boolean().optional(),
     priority: z.number().int().optional(),
     active: z.boolean().optional(),
   })
-  .refine((d) => d.trigger !== "keyword" || (d.keywords?.length ?? 0) > 0, {
-    message: "keyword flows require at least one keyword",
-    path: ["keywords"],
+  .refine(
+    (d) => !["keyword", "booking"].includes(d.trigger) || (d.keywords?.length ?? 0) > 0,
+    { message: "keyword/booking flows require at least one keyword", path: ["keywords"] },
+  )
+  .refine((d) => d.trigger === "booking" || (d.responseText?.length ?? 0) > 0, {
+    message: "responseText is required",
+    path: ["responseText"],
   });
 
 export async function POST(req: NextRequest) {
@@ -51,7 +57,8 @@ export async function POST(req: NextRequest) {
       trigger: d.trigger,
       keywords: d.keywords ?? [],
       matchType: d.matchType ?? "contains",
-      responseText: d.responseText,
+      // Booking flows send slot options, not responseText.
+      responseText: d.responseText ?? "",
       handoff: d.handoff ?? false,
       priority: d.priority ?? 0,
       active: d.active ?? true,

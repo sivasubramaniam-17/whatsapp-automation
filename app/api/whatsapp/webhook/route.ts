@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import type { Tenant } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { verifyWebhookSignature } from "@/lib/whatsapp";
-import { runChatbot } from "@/lib/chatbot";
+import { runChatbot, handlePendingBooking } from "@/lib/chatbot";
 
 export const runtime = "nodejs";
 
@@ -119,6 +119,10 @@ async function handleIncomingMessage(tenant: Tenant, msg: any) {
     where: { id: conversation.id },
     data: { lastMessageAt: new Date(), windowExpiresAt, status: "open" },
   });
+
+  // If we're mid-booking, treat this reply as the slot choice and stop.
+  const consumed = await handlePendingBooking(tenant, conversation, contact, text ?? "");
+  if (consumed) return;
 
   // Run the chatbot engine: auto-reply if a flow matches, else the message
   // simply waits in the shared inbox for a human.
