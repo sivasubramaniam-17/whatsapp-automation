@@ -28,6 +28,8 @@ model Tenant {
   messages      Message[]
   campaigns     Campaign[]
   chatbotFlows  ChatbotFlow[]
+  appointments  Appointment[]
+  sequences     Sequence[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -69,8 +71,14 @@ model Contact {
   stage   String   @default("new") // new | contacted | qualified | won | lost
   optIn   Boolean  @default(false)
 
-  conversations      Conversation[]
-  campaignRecipients CampaignRecipient[]
+  // AI/heuristic lead scoring (Feature #4).
+  leadScore   String? // hot | warm | cold
+  leadSummary String? // short auto-generated summary of the conversation
+
+  conversations       Conversation[]
+  campaignRecipients  CampaignRecipient[]
+  appointments        Appointment[]
+  sequenceEnrollments SequenceEnrollment[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -100,6 +108,9 @@ model Conversation {
   lastMessageAt   DateTime?
   // End of the 24h free "service window". Outside it only templates are allowed.
   windowExpiresAt DateTime?
+  // Tracks a multi-step bot interaction awaiting the customer's next reply
+  // (e.g. booking: JSON with proposed slots). Feature #5.
+  pendingAction   String?
 
   messages Message[]
 
@@ -219,4 +230,63 @@ model ChatbotFlow {
   updatedAt DateTime @updatedAt
 
   @@index([tenantId])
+}
+
+// Feature #5 — an appointment / site-visit booked in chat.
+model Appointment {
+  id       String @id @default(cuid())
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  contactId String
+  contact   Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  slotStart DateTime
+  status    String   @default("booked") // booked | cancelled | completed
+  note      String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId])
+  @@index([contactId])
+}
+
+// Feature #7 — an automated follow-up sequence (drip).
+model Sequence {
+  id       String @id @default(cuid())
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  name   String
+  active Boolean @default(true)
+  // Ordered steps: [{ delayHours: number, type: "text"|"template",
+  //   text?: string, templateName?: string, languageCode?: string }]
+  steps  Json
+
+  enrollments SequenceEnrollment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId])
+}
+
+// A contact's progress through a sequence.
+model SequenceEnrollment {
+  id         String   @id @default(cuid())
+  sequenceId String
+  sequence   Sequence @relation(fields: [sequenceId], references: [id], onDelete: Cascade)
+  contactId  String
+  contact    Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  currentStep Int      @default(0)
+  status      String   @default("active") // active | completed | stopped
+  nextRunAt   DateTime // when the next step is due
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([sequenceId, contactId])
+  @@index([status, nextRunAt])
 }

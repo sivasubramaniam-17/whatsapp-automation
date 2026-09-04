@@ -9,6 +9,7 @@ export default function InboxPage() {
   const [thread, setThread] = useState<any>(null);
   const [reply, setReply] = useState("");
   const [error, setError] = useState("");
+  const [lead, setLead] = useState<any>(null);
   const msgsRef = useRef<HTMLDivElement>(null);
 
   async function loadList() {
@@ -17,9 +18,19 @@ export default function InboxPage() {
   }
   async function loadThread(id: string) {
     setActiveId(id);
+    setLead(null);
     const d = await api(`/conversations/${id}`);
     setThread(d);
     setTimeout(() => msgsRef.current?.scrollTo(0, msgsRef.current.scrollHeight), 50);
+  }
+
+  async function scoreLead() {
+    if (!thread) return;
+    setError("");
+    try {
+      const r = await api(`/conversations/${thread.conversation.id}/analyze`, { method: "POST" });
+      setLead(r);
+    } catch (e) { setError((e as Error).message); }
   }
   useEffect(() => { loadList(); }, []);
 
@@ -66,10 +77,22 @@ export default function InboxPage() {
                   <strong>{thread.conversation.contact.name || thread.conversation.contact.waPhone}</strong>
                   <div className="muted" style={{ fontSize: 12 }}>{thread.conversation.contact.waPhone}</div>
                 </div>
-                {thread.windowOpen
-                  ? <span className="pill green">24h window open</span>
-                  : <span className="pill warn">window closed · template only</span>}
+                <div className="row">
+                  <button className="ghost" onClick={scoreLead}>Score lead</button>
+                  {thread.windowOpen
+                    ? <span className="pill green">24h window open</span>
+                    : <span className="pill warn">window closed · template only</span>}
+                </div>
               </div>
+              {lead && (
+                <div style={{ padding: "8px 16px", borderBottom: "1px solid var(--border)" }}>
+                  <span className={`pill ${lead.leadScore === "hot" ? "warn" : lead.leadScore === "warm" ? "green" : ""}`}>
+                    {lead.leadScore?.toUpperCase()} · {lead.stage}
+                  </span>{" "}
+                  {(lead.tags ?? []).map((t: string) => <span key={t} className="tag">{t}</span>)}
+                  <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>{lead.summary}</div>
+                </div>
+              )}
               <div className="msgs" ref={msgsRef}>
                 {thread.conversation.messages.map((m: any) => (
                   <div key={m.id} className={`bubble ${m.direction}`}>
