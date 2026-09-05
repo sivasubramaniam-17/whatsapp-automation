@@ -31,3 +31,4 @@ npm-debug.log*
 
 # prisma
 backend/prisma/*.db
+.vercel
